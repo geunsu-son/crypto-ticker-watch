@@ -37,7 +37,6 @@ const alertTickerTitle = document.querySelector("#alertTickerTitle");
 const alertTickerSelect = document.querySelector("#alertTickerSelect");
 const alertList = document.querySelector("#alertList");
 const alertCountText = document.querySelector("#alertCountText");
-const alertDirectionSelect = document.querySelector("#alertDirectionSelect");
 const alertTargetInput = document.querySelector("#alertTargetInput");
 const alertRepeatSelect = document.querySelector("#alertRepeatSelect");
 const alertStatus = document.querySelector("#alertStatus");
@@ -563,12 +562,8 @@ function getAlertRule(tickerId) {
   return getEnabledAlertRules(tickerId)[0] || null;
 }
 
-function getAlertDirectionLabel(direction) {
-  return direction === "below" ? "이하" : "이상";
-}
-
-function getAlertDirectionSymbol(direction) {
-  return direction === "below" ? "≤" : "≥";
+function formatAlertCondition(rule) {
+  return `@ ${formatPrice(rule.targetPrice)}`;
 }
 
 function getAlertRepeatLabel(repeat) {
@@ -630,10 +625,9 @@ function showAlertForm(tickerId) {
 
   const cached = state.priceCache[ticker.id] || {};
   alertTickerTitle.textContent = getTickerLabel(ticker);
-  alertDirectionSelect.value = "above";
   alertTargetInput.value = Number.isFinite(Number(cached.price)) ? String(cached.price) : "";
   alertRepeatSelect.value = "once";
-  setAlertStatus("목표 가격을 입력한 뒤 알림을 추가하세요.");
+  setAlertStatus("알림 지정가를 입력한 뒤 알림을 추가하세요.");
   alertPanel.classList.remove("hidden");
   alertTargetInput.focus();
   alertTargetInput.select();
@@ -655,7 +649,6 @@ function showAlertEditForm(tickerId, rule) {
   }
 
   alertTickerTitle.textContent = getTickerLabel(ticker);
-  alertDirectionSelect.value = rule.direction === "below" ? "below" : "above";
   alertTargetInput.value = Number.isFinite(Number(rule.targetPrice)) ? String(rule.targetPrice) : "";
   alertRepeatSelect.value = rule.repeat === "repeat" ? "repeat" : "once";
   setAlertStatus("조건을 수정한 뒤 변경 저장을 누르세요.");
@@ -998,7 +991,7 @@ function createAlertListRow(ticker, rule) {
 
   const condition = document.createElement("div");
   condition.className = "alert-list-condition";
-  condition.textContent = `${getAlertDirectionSymbol(rule.direction)} ${formatPrice(rule.targetPrice)}`;
+  condition.textContent = formatAlertCondition(rule);
 
   const meta = document.createElement("div");
   meta.className = "price-detail";
@@ -1089,7 +1082,6 @@ async function saveAlertRule() {
   try {
     const rule = {
       enabled: isEditing ? Boolean(editingAlertRule.rule.enabled) : true,
-      direction: alertDirectionSelect.value,
       targetPrice: Number(alertTargetInput.value),
       repeat: alertRepeatSelect.value
     };
@@ -1439,7 +1431,7 @@ alertTickerSelect?.addEventListener("change", () => {
   selectedAlertTickerId = alertTickerSelect.value;
   const ticker = getTickerById(selectedAlertTickerId);
   const cached = state.priceCache[selectedAlertTickerId] || {};
-  alertTickerTitle.textContent = ticker ? getTickerLabel(ticker) : "티커별 목표 가격을 설정합니다.";
+  alertTickerTitle.textContent = ticker ? getTickerLabel(ticker) : "지정가에 가격이 닿으면 알림을 받습니다.";
   if (!alertTargetInput.value && Number.isFinite(Number(cached.price))) {
     alertTargetInput.value = String(cached.price);
   }

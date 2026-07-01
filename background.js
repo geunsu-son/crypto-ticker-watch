@@ -228,19 +228,27 @@ function createAlertRuleId() {
 }
 
 function normalizeAlertRule(rule = {}) {
-  const targetPrice = Number(rule.targetPrice);
-  const direction = ALERT_DIRECTION_OPTIONS.includes(rule.direction)
+  const legacyDirection = ALERT_DIRECTION_OPTIONS.includes(rule.direction)
     ? rule.direction
     : "above";
   const repeat = ALERT_REPEAT_OPTIONS.includes(rule.repeat)
     ? rule.repeat
     : "once";
+  let targetPrice = Number(rule.targetPrice);
+  const offset = Number(rule.offset);
+  const referencePrice = Number(rule.referencePrice);
+
+  if ((!Number.isFinite(targetPrice) || targetPrice <= 0)
+    && Number.isFinite(offset) && offset > 0
+    && Number.isFinite(referencePrice) && referencePrice > 0) {
+    targetPrice = legacyDirection === "above" ? referencePrice + offset : referencePrice - offset;
+  }
+
   const enabled = Boolean(rule.enabled) && Number.isFinite(targetPrice) && targetPrice > 0;
 
   return {
     id: rule.id || createAlertRuleId(),
     enabled,
-    direction,
     targetPrice: Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : null,
     repeat,
     triggered: Boolean(rule.triggered),
@@ -256,6 +264,7 @@ function normalizeAlertRuleList(rawRules = []) {
     ? rawRules
     : (rawRules && typeof rawRules === "object" && (
         Object.prototype.hasOwnProperty.call(rawRules, "targetPrice") ||
+        Object.prototype.hasOwnProperty.call(rawRules, "offset") ||
         Object.prototype.hasOwnProperty.call(rawRules, "enabled") ||
         Object.prototype.hasOwnProperty.call(rawRules, "direction")
       )
@@ -296,9 +305,6 @@ function normalizeAlertRules(alertRules = {}, trackedTickers = [], idMap = new M
 function buildUpdatedAlertRule(input = {}, previousRule = {}) {
   const now = Date.now();
   const previous = previousRule ? normalizeAlertRule(previousRule) : {};
-  const direction = ALERT_DIRECTION_OPTIONS.includes(input.direction)
-    ? input.direction
-    : (previous.direction || "above");
   const repeat = ALERT_REPEAT_OPTIONS.includes(input.repeat)
     ? input.repeat
     : (previous.repeat || "once");
@@ -312,7 +318,6 @@ function buildUpdatedAlertRule(input = {}, previousRule = {}) {
   const previousTargetPrice = Number(previous.targetPrice);
   const thresholdChanged = (
     Number(previousTargetPrice) !== targetPrice ||
-    previous.direction !== direction ||
     previous.repeat !== repeat
   );
 
@@ -321,7 +326,6 @@ function buildUpdatedAlertRule(input = {}, previousRule = {}) {
       ...previous,
       id: input.id || previous.id || createAlertRuleId(),
       enabled: false,
-      direction,
       targetPrice: Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : previous.targetPrice,
       repeat,
       updatedAt: now
@@ -331,7 +335,6 @@ function buildUpdatedAlertRule(input = {}, previousRule = {}) {
   return {
     id: input.id || previous.id || createAlertRuleId(),
     enabled: true,
-    direction,
     targetPrice,
     repeat,
     triggered: thresholdChanged ? false : Boolean(previous.triggered),
@@ -845,84 +848,55 @@ function formatNotificationPrice(price) {
   }).format(value);
 }
 
-function getAlertConditionText(rule) {
-  return rule.direction === "above" ? "이상" : "이하";
+function getAlertTriggerPrice(rule) {
+  const targetPrice = Number(rule?.targetPrice);
+  return Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : null;
 }
 
-function isAlertConditionMet(price, rule) {
-  const value = Number(price);
-  const target = Number(rule?.targetPrice);
+function didPriceTouchTarget(previousPrice, currentPrice, targetPrice) {
+  const previous = Number(previousPrice);
+  const current = Number(currentPrice);
+  const target = Number(targetPrice);
 
-  if (!Number.isFinite(value) || !Number.isFinite(target)) {
+  if (!Number.isFinite(previous) || !Number.isFinite(current) || !Number.isFinite(target)) {
     return false;
   }
 
-  return rule.direction === "above" ? value >= target : value <= target;
-}
-
-function didPriceCrossAlertThreshold(rule, previousPrice, currentPrice) {
-  if (!Number.isFinite(Number(rule?.targetPrice))) {
-    return false;
+  if (current === target && previous !== target) {
+    return true;
   }
 
-  if (!Number.isFinite(previousPrice) || !Number.isFinite(currentPrice)) {
-    return false;
-  }
-
-  return isAlertConditionMet(currentPrice, rule) && !isAlertConditionMet(previousPrice, rule);
+  return (previous > target && current <= target) || (previous < target && current >= target);
 }
 
-function wasAlertConditionNotMetInRecentPrices(rule, priceEntry, sinceTimestamp) {
-  if (!Number.isFinite(Number(sinceTimestamp))) {
-    return false;
+function didPriceTouchTargetRecently(priceEntry, targetPrice, previousPrice, currentPrice) {
+  if (didPriceTouchTarget(previousPrice, currentPrice, targetPrice)) {
+    return true;
   }
 
   const history = Array.isArray(priceEntry?.priceHistory) ? priceEntry.priceHistory : [];
+  const samples = history
+    .map((sample) => ({
+      price: Number(sample?.price),
+      updatedAt: Number(sample?.updatedAt)
+    }))
+    .filter((sample) => Number.isFinite(sample.price) && Number.isFinite(sample.updatedAt))
+    .sort((a, b) => a.updatedAt - b.updatedAt);
 
-  for (const sample of history) {
-    const price = Number(sample?.price);
-    const updatedAt = Number(sample?.updatedAt);
+  let lastPrice = Number.isFinite(Number(previousPrice)) ? Number(previousPrice) : null;
 
-    if (!Number.isFinite(price) || !Number.isFinite(updatedAt)) {
-      continue;
-    }
-
-    if (updatedAt <= sinceTimestamp) {
-      continue;
-    }
-
-    if (!isAlertConditionMet(price, rule)) {
+  for (const sample of samples) {
+    if (lastPrice !== null && didPriceTouchTarget(lastPrice, sample.price, targetPrice)) {
       return true;
     }
+    lastPrice = sample.price;
   }
 
-  const previousPrice = Number(priceEntry?.previousPrice);
-  if (Number.isFinite(previousPrice) && !isAlertConditionMet(previousPrice, rule)) {
-    return true;
+  if (lastPrice !== null && Number.isFinite(Number(currentPrice))) {
+    return didPriceTouchTarget(lastPrice, currentPrice, targetPrice);
   }
 
   return false;
-}
-
-function shouldTriggerRepeatAlert(rule, priceEntry, conditionMet) {
-  const wasConditionMet = rule.lastConditionMet === true;
-
-  if (!conditionMet) {
-    return false;
-  }
-
-  if (!wasConditionMet) {
-    return true;
-  }
-
-  const previousPrice = Number(priceEntry?.previousPrice);
-  const currentPrice = Number(priceEntry?.price);
-
-  if (didPriceCrossAlertThreshold(rule, previousPrice, currentPrice)) {
-    return true;
-  }
-
-  return wasAlertConditionNotMetInRecentPrices(rule, priceEntry, rule.lastNotifiedAt);
 }
 
 async function showPriceAlertNotification(ticker, rule, currentPrice, alertSoundEnabled = DEFAULT_ALERT_SOUND_ENABLED) {
@@ -936,7 +910,7 @@ async function showPriceAlertNotification(ticker, rule, currentPrice, alertSound
     type: "basic",
     iconUrl: "icons/icon-128.png",
     title: "가격 도달 알림",
-    message: `${ticker.exchange} ${marketText} ${ticker.symbol} 현재가 ${priceText} · 목표 ${getAlertConditionText(rule)} ${targetText}`,
+    message: `${ticker.exchange} ${marketText} ${ticker.symbol} 지정가 ${targetText} 도달 · 현재 ${priceText}`,
     priority: 2,
     silent: !alertSoundEnabled
   });
@@ -956,20 +930,18 @@ async function evaluatePriceAlerts(state, priceCache) {
     const nextRules = [];
 
     for (const rule of rules) {
-      if (!rule.enabled || !Number.isFinite(Number(rule.targetPrice))) {
+      if (!rule.enabled || !Number.isFinite(getAlertTriggerPrice(rule))) {
         nextRules.push(rule);
         continue;
       }
 
       const priceEntry = priceCache?.[ticker.id];
-      const conditionMet = hasValidPrice
-        ? isAlertConditionMet(currentPrice, rule)
+      const previousPrice = Number(priceEntry?.previousPrice);
+      const targetPrice = getAlertTriggerPrice(rule);
+      const touched = hasValidPrice && Number.isFinite(targetPrice)
+        ? didPriceTouchTargetRecently(priceEntry, targetPrice, previousPrice, currentPrice)
         : false;
-      const shouldNotify = conditionMet && (
-        rule.repeat === "repeat"
-          ? shouldTriggerRepeatAlert(rule, priceEntry, conditionMet)
-          : !rule.triggered
-      );
+      const shouldNotify = touched && (rule.repeat === "repeat" || !rule.triggered);
 
       if (shouldNotify) {
         await showPriceAlertNotification(ticker, rule, currentPrice, state.alertSoundEnabled);
@@ -977,7 +949,7 @@ async function evaluatePriceAlerts(state, priceCache) {
 
       nextRules.push({
         ...rule,
-        lastConditionMet: conditionMet,
+        lastConditionMet: touched,
         triggered: shouldNotify || rule.triggered,
         lastNotifiedAt: shouldNotify ? Date.now() : rule.lastNotifiedAt
       });

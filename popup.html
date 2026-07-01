@@ -130,7 +130,7 @@
           <div class="panel-title">
             <div>
               <h2 id="alertPanelTitle">＋ 가격 도달 알림 추가</h2>
-              <p id="alertTickerTitle">티커별로 여러 개의 목표 가격을 등록할 수 있습니다.</p>
+              <p id="alertTickerTitle">지정가에 가격이 닿으면 알림을 받습니다.</p>
             </div>
             <button id="closeAlertButton" class="text-button" type="button">닫기</button>
           </div>
@@ -139,16 +139,9 @@
               <span>티커</span>
               <select id="alertTickerSelect" aria-label="알림 티커 선택"></select>
             </label>
-            <label class="setting-field" for="alertDirectionSelect">
-              <span>도달 조건</span>
-              <select id="alertDirectionSelect" aria-label="알림 도달 조건">
-                <option value="above">목표 가격 이상</option>
-                <option value="below">목표 가격 이하</option>
-              </select>
-            </label>
             <label class="setting-field" for="alertTargetInput">
-              <span>목표 가격</span>
-              <input id="alertTargetInput" type="number" min="0" step="any" inputmode="decimal" placeholder="예: 100000" />
+              <span>알림 지정가</span>
+              <input id="alertTargetInput" type="number" min="0" step="any" inputmode="decimal" placeholder="예: 3000" />
             </label>
             <label class="setting-field" for="alertRepeatSelect">
               <span>알림 방식</span>
@@ -156,14 +149,14 @@
                 <option value="once">한 번만 알림</option>
                 <option value="repeat">조건 재도달 시 반복</option>
               </select>
-              <small class="field-hint">반복: 목표가를 벗어났다가 다시 도달할 때 알림. 가격 확인은 설정한 업데이트 주기(1~30분)마다 이루어집니다.</small>
+              <small class="field-hint">위·아래 어느 방향이든 지정가에 닿으면 알림. 반복은 벗어났다가 다시 닿을 때.</small>
             </label>
           </div>
           <div class="panel-actions">
             <button id="saveAlertButton" class="save-button" type="button">알림 추가</button>
             <button id="cancelAlertButton" class="neutral-button" type="button">취소</button>
           </div>
-          <div id="alertStatus" class="panel-status">티커와 목표 가격을 입력하세요.</div>
+          <div id="alertStatus" class="panel-status">알림 지정가를 입력하세요.</div>
         </section>
 
         <section class="tracked-card" aria-label="등록된 알림">
@@ -178,7 +171,7 @@
             <summary>알림이 오지 않나요?</summary>
             <div class="alert-help-body">
               <p>확장 프로그램 알림은 Chrome을 통해 Windows 알림으로 표시됩니다. 아래를 확인해 보세요.</p>
-              <p><strong>반복 알림</strong>은 목표가를 벗어났다가 다시 도달할 때만 옵니다. 가격이 목표 범위 안에 계속 머물면 추가 알림은 오지 않습니다. 검사 주기는 설정의 <strong>가격 업데이트 주기</strong>(1~30분)입니다.</p>
+              <p><strong>반복 알림</strong>은 지정가를 벗어났다가 다시 닿을 때만 옵니다. 가격이 지정가에 머물면 추가 알림은 오지 않습니다.</p>
               <ol>
                 <li><strong>Windows 설정</strong> (<kbd>Win</kbd>+<kbd>I</kbd>) → <strong>시스템</strong> → <strong>알림</strong>에서 알림과 <strong>Google Chrome</strong>이 켜져 있는지 확인</li>
                 <li>작업 표시줄 알림 센터에서 <strong>집중 지원</strong>·<strong>방해 금지</strong>가 꺼져 있는지 확인</li>
