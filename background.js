@@ -9,6 +9,7 @@ const ALERT_DIRECTION_OPTIONS = ["above", "below"];
 
 const DEFAULT_UPDATE_INTERVAL_MINUTES = 1;
 const UPDATE_INTERVAL_OPTIONS = [1, 3, 5, 15, 30];
+const DEFAULT_ALERT_SOUND_ENABLED = true;
 
 const DEFAULT_CHANGE_BASIS = "window";
 const CHANGE_BASIS_OPTIONS = ["window", "added"];
@@ -80,6 +81,11 @@ function normalizeUpdateIntervalMinutes(value) {
   return UPDATE_INTERVAL_OPTIONS.includes(interval)
     ? interval
     : DEFAULT_UPDATE_INTERVAL_MINUTES;
+}
+
+function normalizeAlertSoundEnabled(value) {
+  if (value === undefined || value === null) return DEFAULT_ALERT_SOUND_ENABLED;
+  return Boolean(value);
 }
 
 function normalizeChangeBasis(value) {
@@ -366,7 +372,8 @@ async function getStoredState() {
     "updateIntervalMinutes",
     "changeBasis",
     "changeWindow",
-    "alertRules"
+    "alertRules",
+    "alertSoundEnabled"
   ]);
 
   let { tickers: trackedTickers, idMap } = normalizeStoredTickers(stored.trackedTickers);
@@ -375,6 +382,7 @@ async function getStoredState() {
   const updateIntervalMinutes = normalizeUpdateIntervalMinutes(stored.updateIntervalMinutes);
   const changeBasis = normalizeChangeBasis(stored.changeBasis);
   const changeWindow = normalizeChangeWindow(stored.changeWindow, stored.changeBasis);
+  const alertSoundEnabled = normalizeAlertSoundEnabled(stored.alertSoundEnabled);
 
   if (!trackedTickers.length) {
     trackedTickers = DEFAULT_TICKERS;
@@ -386,15 +394,43 @@ async function getStoredState() {
 
   const alertRules = normalizeAlertRules(stored.alertRules || {}, trackedTickers, idMap);
 
-  await chrome.storage.local.set({
-    trackedTickers,
-    badgeTickerId,
-    priceCache,
-    updateIntervalMinutes,
-    changeBasis,
-    changeWindow,
-    alertRules
-  });
+  const patch = {};
+
+  if (JSON.stringify(trackedTickers) !== JSON.stringify(stored.trackedTickers || [])) {
+    patch.trackedTickers = trackedTickers;
+  }
+
+  if (badgeTickerId !== stored.badgeTickerId) {
+    patch.badgeTickerId = badgeTickerId;
+  }
+
+  if (JSON.stringify(priceCache) !== JSON.stringify(stored.priceCache || {})) {
+    patch.priceCache = priceCache;
+  }
+
+  if (updateIntervalMinutes !== stored.updateIntervalMinutes) {
+    patch.updateIntervalMinutes = updateIntervalMinutes;
+  }
+
+  if (changeBasis !== stored.changeBasis) {
+    patch.changeBasis = changeBasis;
+  }
+
+  if (changeWindow !== stored.changeWindow) {
+    patch.changeWindow = changeWindow;
+  }
+
+  if (JSON.stringify(alertRules) !== JSON.stringify(stored.alertRules || {})) {
+    patch.alertRules = alertRules;
+  }
+
+  if (alertSoundEnabled !== stored.alertSoundEnabled) {
+    patch.alertSoundEnabled = alertSoundEnabled;
+  }
+
+  if (Object.keys(patch).length) {
+    await chrome.storage.local.set(patch);
+  }
 
   return {
     trackedTickers,
@@ -404,7 +440,8 @@ async function getStoredState() {
     lastUpdatedAt: stored.lastUpdatedAt || null,
     updateIntervalMinutes,
     changeBasis,
-    changeWindow
+    changeWindow,
+    alertSoundEnabled
   };
 }
 
@@ -812,7 +849,83 @@ function getAlertConditionText(rule) {
   return rule.direction === "above" ? "이상" : "이하";
 }
 
-async function showPriceAlertNotification(ticker, rule, currentPrice) {
+function isAlertConditionMet(price, rule) {
+  const value = Number(price);
+  const target = Number(rule?.targetPrice);
+
+  if (!Number.isFinite(value) || !Number.isFinite(target)) {
+    return false;
+  }
+
+  return rule.direction === "above" ? value >= target : value <= target;
+}
+
+function didPriceCrossAlertThreshold(rule, previousPrice, currentPrice) {
+  if (!Number.isFinite(Number(rule?.targetPrice))) {
+    return false;
+  }
+
+  if (!Number.isFinite(previousPrice) || !Number.isFinite(currentPrice)) {
+    return false;
+  }
+
+  return isAlertConditionMet(currentPrice, rule) && !isAlertConditionMet(previousPrice, rule);
+}
+
+function wasAlertConditionNotMetInRecentPrices(rule, priceEntry, sinceTimestamp) {
+  if (!Number.isFinite(Number(sinceTimestamp))) {
+    return false;
+  }
+
+  const history = Array.isArray(priceEntry?.priceHistory) ? priceEntry.priceHistory : [];
+
+  for (const sample of history) {
+    const price = Number(sample?.price);
+    const updatedAt = Number(sample?.updatedAt);
+
+    if (!Number.isFinite(price) || !Number.isFinite(updatedAt)) {
+      continue;
+    }
+
+    if (updatedAt <= sinceTimestamp) {
+      continue;
+    }
+
+    if (!isAlertConditionMet(price, rule)) {
+      return true;
+    }
+  }
+
+  const previousPrice = Number(priceEntry?.previousPrice);
+  if (Number.isFinite(previousPrice) && !isAlertConditionMet(previousPrice, rule)) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldTriggerRepeatAlert(rule, priceEntry, conditionMet) {
+  const wasConditionMet = rule.lastConditionMet === true;
+
+  if (!conditionMet) {
+    return false;
+  }
+
+  if (!wasConditionMet) {
+    return true;
+  }
+
+  const previousPrice = Number(priceEntry?.previousPrice);
+  const currentPrice = Number(priceEntry?.price);
+
+  if (didPriceCrossAlertThreshold(rule, previousPrice, currentPrice)) {
+    return true;
+  }
+
+  return wasAlertConditionNotMetInRecentPrices(rule, priceEntry, rule.lastNotifiedAt);
+}
+
+async function showPriceAlertNotification(ticker, rule, currentPrice, alertSoundEnabled = DEFAULT_ALERT_SOUND_ENABLED) {
   if (!chrome.notifications?.create) return;
 
   const targetText = formatNotificationPrice(rule.targetPrice);
@@ -824,7 +937,8 @@ async function showPriceAlertNotification(ticker, rule, currentPrice) {
     iconUrl: "icons/icon-128.png",
     title: "가격 도달 알림",
     message: `${ticker.exchange} ${marketText} ${ticker.symbol} 현재가 ${priceText} · 목표 ${getAlertConditionText(rule)} ${targetText}`,
-    priority: 2
+    priority: 2,
+    silent: !alertSoundEnabled
   });
 }
 
@@ -847,18 +961,18 @@ async function evaluatePriceAlerts(state, priceCache) {
         continue;
       }
 
+      const priceEntry = priceCache?.[ticker.id];
       const conditionMet = hasValidPrice
-        ? (rule.direction === "above" ? currentPrice >= rule.targetPrice : currentPrice <= rule.targetPrice)
+        ? isAlertConditionMet(currentPrice, rule)
         : false;
-      const wasConditionMet = rule.lastConditionMet === true;
       const shouldNotify = conditionMet && (
         rule.repeat === "repeat"
-          ? !wasConditionMet
+          ? shouldTriggerRepeatAlert(rule, priceEntry, conditionMet)
           : !rule.triggered
       );
 
       if (shouldNotify) {
-        await showPriceAlertNotification(ticker, rule, currentPrice);
+        await showPriceAlertNotification(ticker, rule, currentPrice, state.alertSoundEnabled);
       }
 
       nextRules.push({
@@ -1121,11 +1235,16 @@ async function updateTrackedPrices() {
   const lastUpdatedAt = successfulUpdateCount > 0 ? Date.now() : (state.lastUpdatedAt || Date.now());
   const nextAlertRules = await evaluatePriceAlerts(state, nextPriceCache);
 
-  await chrome.storage.local.set({
+  const storagePatch = {
     priceCache: nextPriceCache,
-    lastUpdatedAt,
-    alertRules: nextAlertRules
-  });
+    lastUpdatedAt
+  };
+
+  if (nextAlertRules !== state.alertRules) {
+    storagePatch.alertRules = nextAlertRules;
+  }
+
+  await chrome.storage.local.set(storagePatch);
 
   await updateBadgeFromCache(nextPriceCache, state.badgeTickerId);
 
@@ -1443,7 +1562,7 @@ async function updateAlertRule(tickerId, ruleInput = {}) {
 
   await chrome.storage.local.set({ alertRules });
 
-  return getStateResponse();
+  return updateTrackedPrices();
 }
 
 async function deleteAlertRule(tickerId, alertId) {
@@ -1479,11 +1598,15 @@ async function updateSettings(settings = {}) {
   const nextChangeWindow = Object.prototype.hasOwnProperty.call(settings, "changeWindow")
     ? normalizeChangeWindow(settings.changeWindow, nextChangeBasis)
     : normalizeChangeWindow(currentState.changeWindow, nextChangeBasis);
+  const nextAlertSoundEnabled = Object.prototype.hasOwnProperty.call(settings, "alertSoundEnabled")
+    ? normalizeAlertSoundEnabled(settings.alertSoundEnabled)
+    : currentState.alertSoundEnabled;
 
   await chrome.storage.local.set({
     updateIntervalMinutes: nextUpdateIntervalMinutes,
     changeBasis: nextChangeBasis,
-    changeWindow: nextChangeWindow
+    changeWindow: nextChangeWindow,
+    alertSoundEnabled: nextAlertSoundEnabled
   });
 
   await ensureAlarm();

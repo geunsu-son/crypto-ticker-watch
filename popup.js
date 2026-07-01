@@ -28,8 +28,10 @@ const orderStatus = document.querySelector("#orderStatus");
 const updateIntervalSelect = document.querySelector("#updateIntervalSelect");
 const changeBasisSelect = document.querySelector("#changeBasisSelect");
 const changeWindowSelect = document.querySelector("#changeWindowSelect");
+const alertSoundCheckbox = document.querySelector("#alertSoundCheckbox");
 const settingsStatus = document.querySelector("#settingsStatus");
 const alertPanel = document.querySelector("#alertPanel");
+const alertPanelTitle = document.querySelector("#alertPanelTitle");
 const closeAlertButton = document.querySelector("#closeAlertButton");
 const alertTickerTitle = document.querySelector("#alertTickerTitle");
 const alertTickerSelect = document.querySelector("#alertTickerSelect");
@@ -54,6 +56,7 @@ let state = {
   updateIntervalMinutes: 1,
   changeBasis: "window",
   changeWindow: "update_interval",
+  alertSoundEnabled: true,
   updateIntervalOptions: [1, 3, 5, 15, 30],
   changeBasisOptions: ["window", "added"],
   changeWindowOptions: ["update_interval", 1, 3, 5, 15, 30, 60, 240, 1440]
@@ -64,6 +67,7 @@ let lastSearchRequestId = 0;
 let isApplyingState = false;
 var isBackfillingWindowReferences = false;
 let selectedAlertTickerId = null;
+let editingAlertRule = null;
 let activeTabName = "prices";
 let orderDraftTickers = [];
 let draggedOrderTickerId = null;
@@ -251,6 +255,9 @@ function render() {
   if (changeWindowSelect) {
     changeWindowSelect.value = String(state.changeWindow || "update_interval");
   }
+  if (alertSoundCheckbox) {
+    alertSoundCheckbox.checked = state.alertSoundEnabled !== false;
+  }
   isApplyingState = false;
 
   const count = state.trackedTickers.length;
@@ -288,7 +295,7 @@ function togglePanel(panelName) {
   addTickerPanel.classList.toggle("hidden", !shouldShowAdd);
   settingsPanel.classList.toggle("hidden", !shouldShowSettings);
   orderPanel.classList.toggle("hidden", !shouldShowOrder);
-  alertPanel.classList.add("hidden");
+  closeAlertForm();
 
   if (shouldShowAdd) {
     searchInput.focus();
@@ -304,7 +311,7 @@ function closePanels() {
   addTickerPanel.classList.add("hidden");
   settingsPanel.classList.add("hidden");
   orderPanel.classList.add("hidden");
-  alertPanel.classList.add("hidden");
+  closeAlertForm();
 }
 
 function formatMinutesLabel(minutes) {
@@ -577,6 +584,30 @@ function setAlertStatus(message, isError = false) {
   alertStatus.classList.toggle("error-text", isError);
 }
 
+function setAlertFormMode(mode) {
+  const isEdit = mode === "edit";
+
+  if (alertPanelTitle) {
+    alertPanelTitle.textContent = isEdit ? "가격 도달 알림 수정" : "＋ 가격 도달 알림 추가";
+  }
+
+  if (saveAlertButton) {
+    saveAlertButton.textContent = isEdit ? "변경 저장" : "알림 추가";
+  }
+
+  if (alertTickerSelect) {
+    alertTickerSelect.disabled = isEdit;
+  }
+
+  alertPanel?.setAttribute("aria-label", isEdit ? "가격 알림 수정" : "가격 알림 추가");
+}
+
+function closeAlertForm() {
+  editingAlertRule = null;
+  setAlertFormMode("add");
+  alertPanel.classList.add("hidden");
+}
+
 function getTickerById(tickerId) {
   return state.trackedTickers.find((ticker) => ticker.id === tickerId) || null;
 }
@@ -590,6 +621,8 @@ function showAlertForm(tickerId) {
     return;
   }
 
+  editingAlertRule = null;
+  setAlertFormMode("add");
   selectedAlertTickerId = ticker.id;
   if (alertTickerSelect) {
     alertTickerSelect.value = ticker.id;
@@ -606,6 +639,31 @@ function showAlertForm(tickerId) {
   alertTargetInput.select();
 }
 
+function showAlertEditForm(tickerId, rule) {
+  const ticker = getTickerById(tickerId);
+
+  if (!ticker || !rule?.id) {
+    setAlertStatus("수정할 알림을 찾을 수 없습니다.", true);
+    return;
+  }
+
+  editingAlertRule = { tickerId, rule };
+  setAlertFormMode("edit");
+  selectedAlertTickerId = ticker.id;
+  if (alertTickerSelect) {
+    alertTickerSelect.value = ticker.id;
+  }
+
+  alertTickerTitle.textContent = getTickerLabel(ticker);
+  alertDirectionSelect.value = rule.direction === "below" ? "below" : "above";
+  alertTargetInput.value = Number.isFinite(Number(rule.targetPrice)) ? String(rule.targetPrice) : "";
+  alertRepeatSelect.value = rule.repeat === "repeat" ? "repeat" : "once";
+  setAlertStatus("조건을 수정한 뒤 변경 저장을 누르세요.");
+  alertPanel.classList.remove("hidden");
+  alertTargetInput.focus();
+  alertTargetInput.select();
+}
+
 function openAlertPanel(tickerId) {
   switchTab("alerts", {
     openAlertForm: true,
@@ -613,9 +671,9 @@ function openAlertPanel(tickerId) {
   });
 }
 
-function createMetaLine(ticker) {
-  const meta = document.createElement("div");
-  meta.className = "meta-line";
+function createTickerPills(ticker) {
+  const pills = document.createElement("div");
+  pills.className = "ticker-pills";
 
   const exchange = document.createElement("span");
   exchange.className = "exchange-pill";
@@ -625,18 +683,58 @@ function createMetaLine(ticker) {
   market.className = "market-pill";
   market.textContent = formatMarketType(ticker.marketType);
 
+  pills.append(exchange, market);
+  return pills;
+}
+
+function createMetaLine(ticker) {
+  const meta = document.createElement("div");
+  meta.className = "meta-line";
+
   const symbol = document.createElement("span");
   symbol.className = "symbol";
   symbol.textContent = escapeText(ticker.symbol);
 
-  meta.append(exchange, market, symbol);
+  meta.append(createTickerPills(ticker), symbol);
   return meta;
+}
+
+function createTickerStatusLine(ticker) {
+  const isBadgeTicker = state.badgeTickerId === ticker.id;
+  const enabledAlertCount = getEnabledAlertRules(ticker.id).length;
+
+  if (!isBadgeTicker && !enabledAlertCount) {
+    return null;
+  }
+
+  const line = document.createElement("div");
+  line.className = "ticker-status-line";
+
+  if (isBadgeTicker) {
+    const badgePill = document.createElement("span");
+    badgePill.className = "ticker-status-pill is-badge";
+    badgePill.textContent = "툴바 배지";
+    line.append(badgePill);
+  }
+
+  if (enabledAlertCount) {
+    const alertPill = document.createElement("span");
+    alertPill.className = "ticker-status-pill is-alert";
+    alertPill.textContent = `알림 ${enabledAlertCount}개`;
+    line.append(alertPill);
+  }
+
+  return line;
 }
 
 function createTickerRow(ticker, index) {
   const cached = state.priceCache[ticker.id] || {};
+  const isBadgeTicker = state.badgeTickerId === ticker.id;
+  const enabledAlertCount = getEnabledAlertRules(ticker.id).length;
   const row = document.createElement("div");
   row.className = "ticker-row";
+  row.classList.toggle("is-badge", isBadgeTicker);
+  row.classList.toggle("has-alerts", enabledAlertCount > 0);
 
   const info = document.createElement("div");
   const price = document.createElement("div");
@@ -664,24 +762,24 @@ function createTickerRow(ticker, index) {
     detail.textContent = `업데이트 ${formatTime(cached.updatedAt)}`;
   }
 
-  const alertSummary = createAlertSummaryElement(ticker);
-  info.append(createMetaLine(ticker), price);
+  const statusLine = createTickerStatusLine(ticker);
+  info.append(createMetaLine(ticker));
+  if (statusLine) {
+    info.append(statusLine);
+  }
+  info.append(price);
   if (cached.error || showTickerUpdateTime) {
     info.append(detail);
   }
-  if (alertSummary) info.append(alertSummary);
 
   const actions = document.createElement("div");
   actions.className = "row-actions";
-
-  const isBadgeTicker = state.badgeTickerId === ticker.id;
-  const isAlertEnabled = getEnabledAlertRules(ticker.id).length > 0;
 
   const badgeButton = document.createElement("button");
   badgeButton.className = "badge-button icon-action-button";
   badgeButton.type = "button";
   badgeButton.textContent = "📌";
-  badgeButton.title = isBadgeTicker ? "현재 배지 티커" : "배지 티커로 설정";
+  badgeButton.title = isBadgeTicker ? "현재 툴바 배지" : "툴바 배지로 설정";
   badgeButton.setAttribute("aria-label", badgeButton.title);
   badgeButton.classList.toggle("is-active", isBadgeTicker);
   badgeButton.addEventListener("click", () => setBadgeTicker(ticker.id));
@@ -689,10 +787,12 @@ function createTickerRow(ticker, index) {
   const alertButton = document.createElement("button");
   alertButton.className = "alert-button icon-action-button";
   alertButton.type = "button";
-  alertButton.textContent = "🔔";
-  alertButton.title = isAlertEnabled ? `가격 알림 ${getEnabledAlertRules(ticker.id).length}개` : "가격 알림 추가";
+  alertButton.textContent = enabledAlertCount > 0 ? "🔔" : "🔕";
+  alertButton.title = enabledAlertCount > 0
+    ? `알림 ${enabledAlertCount}개 활성`
+    : "가격 알림 추가";
   alertButton.setAttribute("aria-label", alertButton.title);
-  alertButton.classList.toggle("is-active", isAlertEnabled);
+  alertButton.classList.toggle("is-active", enabledAlertCount > 0);
   alertButton.addEventListener("click", () => openAlertPanel(ticker.id));
 
   const removeButton = document.createElement("button");
@@ -824,6 +924,7 @@ async function saveSettings() {
       type: "UPDATE_SETTINGS",
       settings: {
         updateIntervalMinutes: Number(updateIntervalSelect.value),
+        alertSoundEnabled: Boolean(alertSoundCheckbox?.checked),
         ...parseChangeBasisSelection(changeBasisSelect.value)
       }
     });
@@ -875,28 +976,55 @@ function getAllAlertItems() {
 
 function createAlertListRow(ticker, rule) {
   const row = document.createElement("div");
-  row.className = "alert-list-row";
+  row.className = `alert-list-row ${rule.enabled ? "is-enabled" : "is-disabled"}`;
 
   const info = document.createElement("div");
-  const title = document.createElement("div");
-  title.className = "alert-list-title";
-  title.textContent = `${getTickerLabel(ticker)} · ${getAlertDirectionSymbol(rule.direction)} ${formatPrice(rule.targetPrice)}`;
+  info.className = "alert-list-info";
+
+  const header = document.createElement("div");
+  header.className = "alert-list-header";
+
+  const statusPill = document.createElement("span");
+  statusPill.className = `alert-status-pill ${rule.enabled ? "is-on" : "is-off"}`;
+  statusPill.textContent = rule.enabled ? "활성" : "비활성";
+  statusPill.setAttribute("aria-label", rule.enabled ? "알림 활성" : "알림 비활성");
+
+  header.append(statusPill, createTickerPills(ticker));
+
+  const symbol = document.createElement("div");
+  symbol.className = "alert-list-symbol";
+  symbol.textContent = ticker.symbol;
+  symbol.title = ticker.symbol;
+
+  const condition = document.createElement("div");
+  condition.className = "alert-list-condition";
+  condition.textContent = `${getAlertDirectionSymbol(rule.direction)} ${formatPrice(rule.targetPrice)}`;
 
   const meta = document.createElement("div");
   meta.className = "price-detail";
-  const status = rule.enabled ? "켜짐" : "꺼짐";
   const notified = rule.lastNotifiedAt ? ` · 최근 알림 ${formatTime(rule.lastNotifiedAt)}` : "";
-  meta.textContent = `${getAlertRepeatLabel(rule.repeat)} · ${status}${notified}`;
+  meta.textContent = `${getAlertRepeatLabel(rule.repeat)}${notified}`;
 
-  info.append(title, meta);
+  info.append(header, symbol, condition, meta);
 
   const actions = document.createElement("div");
   actions.className = "alert-list-actions";
 
+  const editButton = document.createElement("button");
+  editButton.className = "edit-alert-button icon-action-button";
+  editButton.type = "button";
+  editButton.textContent = "✒️";
+  editButton.title = "알림 수정";
+  editButton.setAttribute("aria-label", "알림 수정");
+  editButton.addEventListener("click", () => showAlertEditForm(ticker.id, rule));
+
   const toggleButton = document.createElement("button");
-  toggleButton.className = rule.enabled ? "neutral-button compact-button" : "save-button compact-button";
+  toggleButton.className = "toggle-alert-button icon-action-button";
   toggleButton.type = "button";
-  toggleButton.textContent = rule.enabled ? "끄기" : "켜기";
+  toggleButton.classList.toggle("is-active", rule.enabled);
+  toggleButton.textContent = rule.enabled ? "🔔" : "🔕";
+  toggleButton.title = rule.enabled ? "알림 끄기" : "알림 켜기";
+  toggleButton.setAttribute("aria-label", toggleButton.title);
   toggleButton.addEventListener("click", () => toggleAlertRule(ticker.id, rule));
 
   const deleteButton = document.createElement("button");
@@ -904,9 +1032,10 @@ function createAlertListRow(ticker, rule) {
   deleteButton.type = "button";
   deleteButton.textContent = "🗑️";
   deleteButton.title = "알림 삭제";
+  deleteButton.setAttribute("aria-label", "알림 삭제");
   deleteButton.addEventListener("click", () => deleteAlertRule(ticker.id, rule.id));
 
-  actions.append(toggleButton, deleteButton);
+  actions.append(editButton, toggleButton, deleteButton);
   row.append(info, actions);
 
   return row;
@@ -938,14 +1067,18 @@ function renderAlertManager() {
 }
 
 async function saveAlertRule() {
-  const tickerId = alertTickerSelect?.value || selectedAlertTickerId;
+  const isEditing = Boolean(editingAlertRule?.rule?.id);
+  const tickerId = isEditing
+    ? editingAlertRule.tickerId
+    : (alertTickerSelect?.value || selectedAlertTickerId);
+
   if (!tickerId) {
     setAlertStatus("알림을 추가할 티커를 선택하세요.", true);
     return;
   }
 
   const currentRules = getAlertRules(tickerId);
-  if (currentRules.length >= Number(state.maxAlertsPerTicker || 20)) {
+  if (!isEditing && currentRules.length >= Number(state.maxAlertsPerTicker || 20)) {
     setAlertStatus(`티커당 최대 ${state.maxAlertsPerTicker || 20}개까지 등록할 수 있습니다.`, true);
     return;
   }
@@ -954,15 +1087,21 @@ async function saveAlertRule() {
   setLoading(true);
 
   try {
+    const rule = {
+      enabled: isEditing ? Boolean(editingAlertRule.rule.enabled) : true,
+      direction: alertDirectionSelect.value,
+      targetPrice: Number(alertTargetInput.value),
+      repeat: alertRepeatSelect.value
+    };
+
+    if (isEditing) {
+      rule.id = editingAlertRule.rule.id;
+    }
+
     const response = await sendMessage({
       type: "UPDATE_ALERT_RULE",
       tickerId,
-      rule: {
-        enabled: true,
-        direction: alertDirectionSelect.value,
-        targetPrice: Number(alertTargetInput.value),
-        repeat: alertRepeatSelect.value
-      }
+      rule
     });
 
     applyState(response);
@@ -971,10 +1110,10 @@ async function saveAlertRule() {
       alertTickerSelect.value = tickerId;
     }
     alertTargetInput.value = "";
-    alertPanel.classList.add("hidden");
+    closeAlertForm();
     renderAlertManager();
-    showToast("알림이 추가되었습니다.");
-    setAlertStatus("알림 추가됨");
+    showToast(isEditing ? "알림이 수정되었습니다." : "알림이 추가되었습니다.");
+    setAlertStatus(isEditing ? "알림 수정됨" : "알림 추가됨");
   } catch (error) {
     setAlertStatus(error.message, true);
   } finally {
@@ -1281,10 +1420,11 @@ closeSettingsButton.addEventListener("click", closePanels);
 closeOrderButton.addEventListener("click", cancelOrderEdit);
 saveOrderButton.addEventListener("click", saveTickerOrder);
 cancelOrderButton.addEventListener("click", cancelOrderEdit);
-closeAlertButton?.addEventListener("click", () => alertPanel.classList.add("hidden"));
+closeAlertButton?.addEventListener("click", closeAlertForm);
 updateIntervalSelect.addEventListener("change", saveSettings);
 changeBasisSelect.addEventListener("change", saveSettings);
 changeWindowSelect?.addEventListener("change", saveSettings);
+alertSoundCheckbox?.addEventListener("change", saveSettings);
 saveAlertButton.addEventListener("click", saveAlertRule);
 priceTabButton?.addEventListener("click", () => switchTab("prices"));
 alertsTabButton?.addEventListener("click", () => switchTab("alerts"));
@@ -1294,7 +1434,7 @@ showAlertFormButton?.addEventListener("click", () => {
     tickerId: alertTickerSelect?.value || selectedAlertTickerId || state.trackedTickers[0]?.id
   });
 });
-cancelAlertButton?.addEventListener("click", () => alertPanel.classList.add("hidden"));
+cancelAlertButton?.addEventListener("click", closeAlertForm);
 alertTickerSelect?.addEventListener("change", () => {
   selectedAlertTickerId = alertTickerSelect.value;
   const ticker = getTickerById(selectedAlertTickerId);

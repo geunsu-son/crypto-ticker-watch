@@ -39,6 +39,20 @@ Display selected OKX/Binance crypto ticker prices and one selected ticker price 
 ## Category
 Productivity or Finance
 
+## Troubleshooting notifications
+
+If price alerts do not appear on screen, check both Chrome and your operating system notification settings.
+
+**Windows 10 / 11**
+
+1. Open **Settings** (Win + I) → **System** → **Notifications**.
+2. Make sure notifications are turned on and **Google Chrome** is allowed.
+3. Turn off **Focus assist** / **Do not disturb** from the notification center.
+4. In Chrome, open `chrome://settings/content/notifications` and make sure notifications are not blocked globally.
+5. Restart Chrome after changing OS notification settings.
+
+Alerts are checked when prices update on your selected interval (1–30 minutes), not in real time.
+
 ## Data disclosure note
 The extension stores selected tickers, badge settings, update interval, change settings, alert rules, and cached price history locally in the browser. It does not collect, sell, or transmit personal information to the developer.
 
