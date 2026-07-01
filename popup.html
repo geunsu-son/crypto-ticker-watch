@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crypto Ticker Watch</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <div>
+          <h1>🪙 Crypto Ticker Watch</h1>
+          <p id="summary">가격을 불러오는 중...</p>
+        </div>
+        <div class="header-actions">
+          <button id="settingsPanelButton" class="icon-button" type="button" title="설정">⚙</button>
+          <button id="refreshButton" class="icon-button" type="button" title="새로고침">↻</button>
+        </div>
+      </header>
+
+      <nav class="tab-nav" aria-label="팝업 탭">
+        <button id="priceTabButton" class="tab-button is-active" type="button">가격</button>
+        <button id="alertsTabButton" class="tab-button" type="button">알림</button>
+      </nav>
+
+      <section id="priceTabPanel" class="tab-panel">
+        <section id="settingsPanel" class="panel-card hidden" aria-label="설정">
+          <div class="panel-title">
+            <div>
+              <h2>설정</h2>
+              <p>업데이트 주기와 등락폭 기준을 조정합니다.</p>
+            </div>
+            <button id="closeSettingsButton" class="text-button" type="button">닫기</button>
+          </div>
+          <div class="settings-grid">
+            <label class="setting-field" for="updateIntervalSelect">
+              <span>가격 업데이트 주기</span>
+              <select id="updateIntervalSelect" aria-label="가격 업데이트 주기">
+                <option value="1">1분</option>
+                <option value="3">3분</option>
+                <option value="5">5분</option>
+                <option value="15">15분</option>
+                <option value="30">30분</option>
+              </select>
+            </label>
+            <label class="setting-field" for="changeBasisSelect">
+              <span>상승·하락폭 집계 기준</span>
+              <select id="changeBasisSelect" aria-label="상승 하락폭 집계 기준">
+                <optgroup label="시간봉 기준">
+                  <option value="window:1">1분봉 대비</option>
+                  <option value="window:3">3분봉 대비</option>
+                  <option value="window:5">5분봉 대비</option>
+                  <option value="window:15">15분봉 대비</option>
+                  <option value="window:30">30분봉 대비</option>
+                  <option value="window:60">1시간 대비</option>
+                  <option value="window:240">4시간 대비</option>
+                  <option value="window:1440">24시간 대비</option>
+                </optgroup>
+                <optgroup label="기타 기준">
+                  <option value="window:update_interval">업데이트 주기 대비</option>
+                  <option value="added">추가 시점 대비</option>
+                </optgroup>
+              </select>
+              <small class="field-hint">가격 업데이트 주기와 별개로 등락폭 기준 시간봉을 선택할 수 있습니다.</small>
+            </label>
+          </div>
+          <div id="settingsStatus" class="panel-status">저장됨</div>
+        </section>
+
+        <section id="addTickerPanel" class="panel-card hidden" aria-label="티커 추가">
+          <div class="panel-title">
+            <div>
+              <h2>티커 추가</h2>
+              <p>거래소와 현물/선물을 선택한 뒤 검색하세요.</p>
+            </div>
+            <button id="closeAddPanelButton" class="text-button" type="button">닫기</button>
+          </div>
+          <div class="search-row">
+            <select id="exchangeSelect" aria-label="거래소 선택">
+              <option value="okx">OKX</option>
+              <option value="binance">Binance</option>
+            </select>
+            <select id="marketTypeSelect" aria-label="시장 선택">
+              <option value="all">전체</option>
+              <option value="spot">현물</option>
+              <option value="futures">선물</option>
+            </select>
+          </div>
+          <input id="searchInput" type="search" placeholder="예: ETH, BTC, SOL" autocomplete="off" />
+          <div id="searchStatus" class="hint">[+] 버튼을 눌러 티커를 추가하세요.</div>
+          <div id="searchResults" class="search-results"></div>
+        </section>
+
+        <section id="orderPanel" class="panel-card hidden" aria-label="티커 순서 편집">
+          <div class="panel-title">
+            <div>
+              <h2>순서 편집</h2>
+              <p>티커를 드래그해서 순서를 조정한 뒤 확인을 누르세요.</p>
+            </div>
+            <button id="closeOrderButton" class="text-button" type="button">닫기</button>
+          </div>
+          <div id="orderList" class="order-list"></div>
+          <div class="panel-actions">
+            <button id="saveOrderButton" class="save-button" type="button">확인</button>
+            <button id="cancelOrderButton" class="neutral-button" type="button">취소</button>
+          </div>
+          <div id="orderStatus" class="panel-status">드래그해서 순서를 바꾼 뒤 확인을 누르면 저장됩니다.</div>
+        </section>
+
+        <section class="tracked-card" aria-label="추적 중인 티커">
+          <div class="section-title">
+            <h2>표시 티커</h2>
+            <div class="section-actions">
+              <button id="addPanelButton" class="text-button" type="button">＋ 티커 추가</button>
+              <button id="orderPanelButton" class="text-button" type="button">순서 편집</button>
+              <span id="limitText">0/10</span>
+            </div>
+          </div>
+          <div id="tickerList" class="ticker-list"></div>
+        </section>
+      </section>
+
+      <section id="alertsTabPanel" class="tab-panel hidden">
+        <section id="alertPanel" class="panel-card hidden" aria-label="가격 알림 추가">
+          <div class="panel-title">
+            <div>
+              <h2>＋ 가격 도달 알림 추가</h2>
+              <p id="alertTickerTitle">티커별로 여러 개의 목표 가격을 등록할 수 있습니다.</p>
+            </div>
+            <button id="closeAlertButton" class="text-button" type="button">닫기</button>
+          </div>
+          <div class="settings-grid">
+            <label class="setting-field" for="alertTickerSelect">
+              <span>티커</span>
+              <select id="alertTickerSelect" aria-label="알림 티커 선택"></select>
+            </label>
+            <label class="setting-field" for="alertDirectionSelect">
+              <span>도달 조건</span>
+              <select id="alertDirectionSelect" aria-label="알림 도달 조건">
+                <option value="above">목표 가격 이상</option>
+                <option value="below">목표 가격 이하</option>
+              </select>
+            </label>
+            <label class="setting-field" for="alertTargetInput">
+              <span>목표 가격</span>
+              <input id="alertTargetInput" type="number" min="0" step="any" inputmode="decimal" placeholder="예: 100000" />
+            </label>
+            <label class="setting-field" for="alertRepeatSelect">
+              <span>알림 방식</span>
+              <select id="alertRepeatSelect" aria-label="알림 방식">
+                <option value="once">한 번만 알림</option>
+                <option value="repeat">조건 재도달 시 반복</option>
+              </select>
+            </label>
+          </div>
+          <div class="panel-actions">
+            <button id="saveAlertButton" class="save-button" type="button">알림 추가</button>
+            <button id="cancelAlertButton" class="neutral-button" type="button">취소</button>
+          </div>
+          <div id="alertStatus" class="panel-status">티커와 목표 가격을 입력하세요.</div>
+        </section>
+
+        <section class="tracked-card" aria-label="등록된 알림">
+          <div class="section-title">
+            <h2>알림 리스트</h2>
+            <div class="section-actions">
+              <button id="showAlertFormButton" class="text-button" type="button">＋ 알림 추가</button>
+              <span id="alertCountText">0개</span>
+            </div>
+          </div>
+          <div id="alertList" class="alert-list"></div>
+        </section>
+      </section>
+    </main>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
