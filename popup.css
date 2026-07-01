@@ -319,11 +319,63 @@ input:focus {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
+}
+
+.ticker-pills {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ticker-status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.ticker-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.ticker-status-pill.is-badge {
+  background: #edf7ed;
+  color: #196127;
+}
+
+.ticker-status-pill.is-alert {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.ticker-row.is-badge {
+  border-left: 3px solid #196127;
+}
+
+.ticker-row.has-alerts:not(.is-badge) {
+  border-left: 3px solid #ad6800;
+}
+
+.ticker-row.is-badge.has-alerts {
+  border-left: 3px solid #196127;
 }
 
 .symbol {
   font-weight: 700;
   letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .exchange-pill,
@@ -447,8 +499,8 @@ input:focus {
 }
 
 .badge-button {
-  background: #edf7ed;
-  color: #196127;
+  background: #f0f2f5;
+  color: #8b939e;
 }
 
 .badge-button.is-active {
@@ -457,8 +509,8 @@ input:focus {
 }
 
 .alert-button {
-  background: #fff7e6;
-  color: #ad6800;
+  background: #f0f2f5;
+  color: #8b939e;
 }
 
 .alert-button.is-active {
@@ -579,14 +631,43 @@ input:focus {
     color: #9cc4ff;
   }
 
+  .badge-button {
+    background: #252b32;
+    color: #6f7884;
+  }
+
+  .badge-button.is-active {
+    background: #196127;
+    color: #ffffff;
+  }
+
   .alert-button {
-    background: #3a2a13;
-    color: #ffd591;
+    background: #252b32;
+    color: #6f7884;
   }
 
   .alert-button.is-active {
     background: #ad6800;
     color: #ffffff;
+  }
+
+  .ticker-status-pill.is-badge {
+    background: #1c3a24;
+    color: #8fd19e;
+  }
+
+  .ticker-status-pill.is-alert {
+    background: #3a2a13;
+    color: #ffd591;
+  }
+
+  .ticker-row.is-badge,
+  .ticker-row.is-badge.has-alerts {
+    border-left-color: #2f8f47;
+  }
+
+  .ticker-row.has-alerts:not(.is-badge) {
+    border-left-color: #ad6800;
   }
 
   .save-button {
@@ -699,26 +780,175 @@ input:focus {
   gap: 8px;
 }
 
+.alert-help-details {
+  margin-bottom: 10px;
+  border: 1px solid #eef1f4;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #525b66;
+}
+
+.alert-help-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #15171a;
+  list-style-position: outside;
+}
+
+.alert-help-details summary::-webkit-details-marker {
+  color: #69717d;
+}
+
+.alert-help-body {
+  margin-top: 8px;
+  color: #69717d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.alert-help-body p {
+  margin: 0 0 6px;
+}
+
+.alert-help-body ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.alert-help-body li + li {
+  margin-top: 4px;
+}
+
+.alert-help-body code {
+  font-size: 10px;
+  word-break: break-all;
+}
+
+.alert-help-body kbd {
+  background: #f4f6f8;
+  border: 1px solid #d7dce2;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
 .alert-list-row {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px;
   border: 1px solid #eef1f4;
   border-radius: 12px;
   padding: 10px;
 }
 
-.alert-list-title {
+.alert-list-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alert-list-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alert-list-symbol {
   font-size: 13px;
   font-weight: 800;
   line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-list-condition {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.alert-list-row.is-disabled .alert-list-symbol,
+.alert-list-row.is-disabled .alert-list-condition {
+  color: #8b939e;
+}
+
+.alert-status-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.alert-status-pill.is-on {
+  background: #edf7ed;
+  color: #196127;
+}
+
+.alert-status-pill.is-off {
+  background: #f0f2f5;
+  color: #69717d;
+}
+
+.alert-list-row.is-enabled {
+  background: #fcfffe;
+  border-color: #c8e6c9;
+}
+
+.alert-list-row.is-disabled {
+  background: #fafbfc;
+  border-color: #e3e7ec;
+  border-style: dashed;
+}
+
+.alert-list-row.is-disabled .alert-list-symbol,
+.alert-list-row.is-disabled .alert-list-condition {
+  color: #8b939e;
 }
 
 .alert-list-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+  align-self: start;
+}
+
+.edit-alert-button,
+.toggle-alert-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.edit-alert-button {
+  background: #f4f6f8;
+  color: #525b66;
+}
+
+.toggle-alert-button {
+  background: #f0f2f5;
+  color: #8b939e;
+}
+
+.toggle-alert-button.is-active {
+  background: #fff7e6;
+  color: #ad6800;
 }
 
 .compact-button {
@@ -744,5 +974,60 @@ input:focus {
 
   .alert-list-row {
     border-color: #2b313a;
+  }
+
+  .alert-list-row.is-enabled {
+    background: #171d19;
+    border-color: #2f5d3a;
+  }
+
+  .alert-list-row.is-disabled {
+    background: #1b1f24;
+    border-color: #303640;
+  }
+
+  .alert-list-row.is-disabled .alert-list-symbol,
+  .alert-list-row.is-disabled .alert-list-condition {
+    color: #6f7884;
+  }
+
+  .alert-help-details {
+    border-color: #2b313a;
+    color: #9aa4af;
+  }
+
+  .alert-help-details summary {
+    color: #f4f6f8;
+  }
+
+  .alert-help-body kbd {
+    background: #252b32;
+    border-color: #303640;
+    color: #d7dce2;
+  }
+
+  .alert-status-pill.is-on {
+    background: #1c3a24;
+    color: #8fd19e;
+  }
+
+  .alert-status-pill.is-off {
+    background: #252b32;
+    color: #8b939e;
+  }
+
+  .edit-alert-button {
+    background: #252b32;
+    color: #d7dce2;
+  }
+
+  .toggle-alert-button {
+    background: #252b32;
+    color: #6f7884;
+  }
+
+  .toggle-alert-button.is-active {
+    background: #3a2a13;
+    color: #ffd591;
   }
 }
