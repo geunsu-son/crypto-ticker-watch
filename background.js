@@ -869,31 +869,50 @@ function didPriceTouchTarget(previousPrice, currentPrice, targetPrice) {
   return (previous > target && current <= target) || (previous < target && current >= target);
 }
 
+function getLivePriceHistorySamples(priceEntry) {
+  return (Array.isArray(priceEntry?.priceHistory) ? priceEntry.priceHistory : [])
+    .map((sample) => ({
+      price: Number(sample?.price),
+      updatedAt: Number(sample?.updatedAt),
+      source: sample?.source || null
+    }))
+    .filter((sample) => (
+      Number.isFinite(sample.price) &&
+      Number.isFinite(sample.updatedAt) &&
+      sample.source !== "previous_candle"
+    ))
+    .sort((a, b) => a.updatedAt - b.updatedAt);
+}
+
 function didPriceTouchTargetRecently(priceEntry, targetPrice, previousPrice, currentPrice) {
   if (didPriceTouchTarget(previousPrice, currentPrice, targetPrice)) {
     return true;
   }
 
-  const history = Array.isArray(priceEntry?.priceHistory) ? priceEntry.priceHistory : [];
-  const samples = history
-    .map((sample) => ({
-      price: Number(sample?.price),
-      updatedAt: Number(sample?.updatedAt)
-    }))
-    .filter((sample) => Number.isFinite(sample.price) && Number.isFinite(sample.updatedAt))
-    .sort((a, b) => a.updatedAt - b.updatedAt);
+  const previousUpdatedAt = Number(priceEntry?.previousUpdatedAt);
+  const currentUpdatedAt = Number(priceEntry?.updatedAt);
+
+  if (!Number.isFinite(currentUpdatedAt)) {
+    return false;
+  }
+
+  // Only replay live poll samples from the latest update window. Candle reference
+  // prices are stored for change calculations and must not trigger alert crossings.
+  const interimSamples = getLivePriceHistorySamples(priceEntry).filter((sample) => {
+    if (Number.isFinite(previousUpdatedAt) && sample.updatedAt <= previousUpdatedAt) {
+      return false;
+    }
+
+    return sample.updatedAt <= currentUpdatedAt;
+  });
 
   let lastPrice = Number.isFinite(Number(previousPrice)) ? Number(previousPrice) : null;
 
-  for (const sample of samples) {
+  for (const sample of interimSamples) {
     if (lastPrice !== null && didPriceTouchTarget(lastPrice, sample.price, targetPrice)) {
       return true;
     }
     lastPrice = sample.price;
-  }
-
-  if (lastPrice !== null && Number.isFinite(Number(currentPrice))) {
-    return didPriceTouchTarget(lastPrice, currentPrice, targetPrice);
   }
 
   return false;
