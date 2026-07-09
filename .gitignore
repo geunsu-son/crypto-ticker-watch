@@ -30,3 +30,9 @@ pnpm-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# Cursor IDE project metadata and configuration
+.cursor
+
+# Store listing assets (local maintainer use only)
+store-assets/
